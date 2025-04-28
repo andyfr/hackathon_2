@@ -4,7 +4,7 @@ import logging
 import time
 import os
 import uuid
-
+import display_screen
 # Note: You need to generate the Python protobuf files from your .proto file first.
 # Run the following command in your terminal in the directory containing marble.proto:
 # python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. marble.proto
@@ -130,6 +130,10 @@ class MarbleClient:
             # 2. Determine the input based on the state
             input_to_send = self.decision(current_state)
 
+            # Calculate and print total velocity
+            total_velocity = self.calculate_velocity(current_state.linear_velocity)
+            print(f"Current velocity: {total_velocity:.2f}")
+
             # 3. Send the input
             response = self.send_input(input_to_send)
             if response is None:
@@ -142,6 +146,7 @@ class MarbleClient:
             recorded_state = {
                 'screen': screen_file,
                 'linear_velocity': current_state.linear_velocity,
+                'total_velocity': total_velocity,  # Added total velocity to recorded state
                 'angular_velocity': current_state.angular_velocity,
                 'relative_angular_velocity': current_state.relative_angular_velocity,
                 'finished': current_state.finished,
@@ -149,6 +154,8 @@ class MarbleClient:
             }
             with open(screen_file, 'wb') as f:
                 f.write(current_state.screen)
+
+            #display_screen.display_screen_from_bytes(current_state.screen)
 
             self.records.append((recorded_state, input_to_send))
             if current_state.finished:
@@ -162,6 +169,18 @@ class MarbleClient:
                 break
 
         print("Interaction loop finished.")
+
+    def calculate_velocity(self, linear_velocity) -> float:
+        """
+        Calculates the total velocity from linear velocity components.
+
+        Args:
+            linear_velocity: A protobuf message containing x, y, z components of linear velocity.
+
+        Returns:
+            float: The total velocity magnitude.
+        """
+        return (linear_velocity.x ** 2 + linear_velocity.y ** 2 + linear_velocity.z ** 2) ** 0.5
 
     def get_records_as_dataframe(self) -> pd.DataFrame:
         """
