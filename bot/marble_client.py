@@ -12,6 +12,7 @@ if platform.system() != "Windows":
 
 import cv2
 import numpy as np
+from .image_processor import process_game_state
 # Note: You need to generate the Python protobuf files from your .proto file first.
 # Run the following command in your terminal in the directory containing marble.proto:
 # python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. marble.proto
@@ -232,30 +233,9 @@ class MarbleClient:
             screen_bytes: The raw bytes of the screen image in RGBA format (1280x720x4).
 
         Returns:
-            list: A list of 4 numpy arrays representing the vertical segments of the processed image.
+            dict: A dictionary containing the processed segments and their classifications.
         """
-        # Convert bytes to numpy array and reshape to (720, 1280, 4)
-        nparr = np.frombuffer(screen_bytes, np.uint8)
-        img = nparr.reshape((720, 1280, 4))
-        
-        # Convert RGBA to BGR (OpenCV format)
-        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
-        
-        # Crop the lower part of the image (keep only the top 80% of the image)
-        height, width = img.shape[:2]
-        cropped_height = int(height * 0.8)
-        cropped_img = img[:cropped_height, :]
-        
-        # Split the image into 4 vertical segments
-        segment_width = width // 4
-        segments = []
-        for i in range(4):
-            start_x = i * segment_width
-            end_x = (i + 1) * segment_width
-            segment = cropped_img[:, start_x:end_x]
-            segments.append(segment)
-        
-        return {"road_segments_ahead":self.classify_segments(segments)}
+        return process_game_state(screen_bytes)
 
     def get_records_as_dataframe(self) -> pd.DataFrame:
         """
