@@ -16,4 +16,5 @@ dependencies = [
     "scikit-image>=0.25.2",
     "torch>=2.7.0",
     "tqdm>=4.67.1",
+    "pynput>=1.8.1",
 ]

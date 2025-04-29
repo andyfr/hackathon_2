@@ -36,22 +36,23 @@ logger.setLevel(logging.INFO)
 @click.option('--low-gpu', default=False, is_flag=True, help='Run in low GPU mode')
 @click.option('--server-ip', default='127.0.0.1', help='IP address of the server')
 @click.option('--model-path', default='marble_cnn.pth', help='Path to the trained CNN model file')
-def run(no_server: bool, clients: int, game_seconds: int, seed: int, server_headless: bool, low_gpu: bool, server_ip: str, model_path: str):
+@click.option('--manual-mode', default=False, is_flag=True, help='Enable manual keyboard control mode')
+def run(no_server: bool, clients: int, game_seconds: int, seed: int, server_headless: bool, low_gpu: bool, server_ip: str, model_path: str, manual_mode: bool):
     if not no_server:
         server = util.start_server_process(4000, 5000, clients, game_seconds, seed, low_gpu, server_headless)
 
     with ProcessPoolExecutor(max_workers=clients) as executor:
-        list(executor.map(run_client, [(i, seed, low_gpu, server_ip, model_path) for i in range(clients)]))
+        list(executor.map(run_client, [(i, seed, low_gpu, server_ip, model_path, manual_mode) for i in range(clients)]))
     if server:
         server.kill()
 
 
-def run_client(args: (int, int, bool, str, str)) -> Optional[subprocess.Popen]:
-    client_id, seed, low_gpu, server_ip, model_path = args
+def run_client(args: (int, int, bool, str, str, bool)) -> Optional[subprocess.Popen]:
+    client_id, seed, low_gpu, server_ip, model_path, manual_mode = args
     name = 'A' + str(client_id)
     client = util.start_client_process(4000, server_ip, 5001 + client_id, name, 50051 + client_id, seed, low_gpu)
 
-    bot = marble_client.MarbleClient("localhost", str(50051 + client_id), 'raw_screens_' + str(client_id), name, model_path)
+    bot = marble_client.MarbleClient("localhost", str(50051 + client_id), 'raw_screens_' + str(client_id), name, model_path, manual_mode)
     try:
         bot.run_interaction_loop()
     finally:

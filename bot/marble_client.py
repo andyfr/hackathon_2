@@ -6,14 +6,15 @@ import os
 import uuid
 import platform
 import torch
+import cv2
+import numpy as np
+from pynput import keyboard
 from cnn_model import MarbleCNN, predict_controls
 
 # Only set QT_QPA_PLATFORM on Linux systems
 if platform.system() != "Windows":
     os.environ["QT_QPA_PLATFORM"] = "xcb"  # Force XCB platform for Linux
 
-import cv2
-import numpy as np
 from image_processor import process_game_state
 # Note: You need to generate the Python protobuf files from your .proto file first.
 # Run the following command in your terminal in the directory containing marble.proto:
@@ -37,7 +38,7 @@ class MarbleClient:
     in a pandas DataFrame.
     """
 
-    def __init__(self, host: str, port: int, screen_dir: str, name: str, model_path: str = "marble_cnn.pth"):
+    def __init__(self, host: str, port: int, screen_dir: str, name: str, model_path: str = "marble_cnn.pth", manual_mode: bool = False):
         """
         Initializes the MarbleClient.
 
@@ -47,10 +48,12 @@ class MarbleClient:
             screen_dir: Directory to store screen captures.
             name: Name of the client.
             model_path: Path to the trained CNN model file (optional).
+            manual_mode: Whether to use manual keyboard control instead of AI (default: False).
         """
         self.host = host
         self.port = port
         self.name = name
+        self.manual_mode = manual_mode
         # Create an insecure channel to connect to the server
         self.channel = grpc.insecure_channel(f'{self.host}:{self.port}')
         # Create a stub (client) for the MarbleService
@@ -60,10 +63,10 @@ class MarbleClient:
         self.screen_dir = screen_dir
         os.makedirs(self.screen_dir, exist_ok=True)  # Ensure the directory exists
         
-        # Initialize CNN model if model path is provided
+        # Initialize CNN model if model path is provided and not in manual mode
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = None
-        if model_path and os.path.exists(model_path):
+        if not manual_mode and model_path and os.path.exists(model_path):
             self.model = MarbleCNN().to(self.device)
             self.model.load_state_dict(torch.load(model_path, map_location=self.device))
             self.model.eval()
@@ -72,6 +75,28 @@ class MarbleClient:
             print(f"No CNN model found at {model_path}")
         
         print(f"MarbleClient initialized for {self.host}:{self.port}")
+        if manual_mode:
+            print("Manual control mode enabled. Use WASD or arrow keys to control the marble.")
+            self.pressed_keys = set()  # Initialize empty set for pressed keys
+
+            def on_press(key):
+                try:
+                    self.pressed_keys.add(key.char)
+                except AttributeError:
+                    # Handle special keys like arrow keys
+                    if hasattr(key, 'name'):
+                        self.pressed_keys.add(key.name)
+
+            def on_release(key):
+                try:
+                    self.pressed_keys.discard(key.char)
+                except AttributeError:
+                    # Handle special keys like arrow keys
+                    if hasattr(key, 'name'):
+                        self.pressed_keys.discard(key.name)
+
+            listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+            listener.start()
 
     def get_state(self) -> service_pb2.StateResponse:
         """
@@ -115,39 +140,58 @@ class MarbleClient:
         Returns:
             An InputRequest protobuf message representing the desired action.
         """
-        # Convert screen bytes to numpy array
-        nparr = np.frombuffer(state.screen, np.uint8)
-        img = nparr.reshape((720, 1280, 4))
-        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
-        
-        # If CNN model is available, use it for prediction
-        if self.model is not None:
-            forward, back, left, right, reset = predict_controls(self.model, img, self.device)
-            
-            # Only print the specific action that was predicted
+        if self.manual_mode:
+            # Get keyboard input using the set of pressed keys
+            forward = any(key in ['w', 'W', 'up'] for key in self.pressed_keys)
+            back = any(key in ['s', 'S', 'down'] for key in self.pressed_keys)
+            left = any(key in ['a', 'A', 'left'] for key in self.pressed_keys)
+            right = any(key in ['d', 'D', 'right'] for key in self.pressed_keys)
+            reset = any(key in ['space'] for key in self.pressed_keys)
+
             if forward:
                 print("forward")
-            elif back:
+            if back:
                 print("back")
-            elif left:
+            if left:
                 print("left")
-            elif right:
+            if right:
                 print("right")
-            elif reset:
+            if reset:
                 print("reset")
         else:
-            forward = True
-            back = False
-            left = False
-            right = False
-            reset = False
-
-        total_velocity = self.calculate_velocity(state.linear_velocity)
-        if total_velocity > 20:
-            forward = False
-            reset = True
+            # Convert screen bytes to numpy array
+            nparr = np.frombuffer(state.screen, np.uint8)
+            img = nparr.reshape((720, 1280, 4))
+            img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
             
-        time.sleep(0.2)
+            # If CNN model is available, use it for prediction
+            if self.model is not None:
+                forward, back, left, right, reset = predict_controls(self.model, img, self.device)
+                
+                # Only print the specific action that was predicted
+                if forward:
+                    print("forward")
+                elif back:
+                    print("back")
+                elif left:
+                    print("left")
+                elif right:
+                    print("right")
+                elif reset:
+                    print("reset")
+            else:
+                forward = True
+                back = False
+                left = False
+                right = False
+                reset = False
+
+            total_velocity = self.calculate_velocity(state.linear_velocity)
+            if total_velocity > 20:
+                forward = False
+                reset = True
+                
+            time.sleep(0.1)
 
         return service_pb2.InputRequest(
             forward=forward,
