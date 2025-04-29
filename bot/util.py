@@ -7,6 +7,7 @@ import shlex
 from typing import Optional
 import time
 import tqdm
+import platform
 
 
 def save_images_from_dataframe(
@@ -51,7 +52,7 @@ def start_server_process(
     seed: int,
     low_gpu: bool,
     headless: bool,
-    server_executable: str = "../server.exe"
+    server_executable: str = None
 ) -> Optional[subprocess.Popen]:
     """
     Starts the server executable as a background process with specified arguments.
@@ -61,12 +62,19 @@ def start_server_process(
         game_port: The port number for the game.
         players: The number of players required.
         max_game_seconds: The maximum duration of a game in seconds.
-        server_executable: The path to the server executable file.
+        server_executable: The path to the server executable file. If None, will be determined based on OS.
 
     Returns:
         A subprocess.Popen object representing the started process,
         or None if the process could not be started.
     """
+    if server_executable is None:
+        # Determine the correct executable based on OS
+        if platform.system() == "Windows":
+            server_executable = "../server.exe"
+        else:
+            server_executable = "../server"
+
     command = [
         server_executable,
         "--auth-port", str(auth_port),
@@ -107,7 +115,7 @@ def start_client_process(
     grpc_port: int,
     seed: int,
     low_gpu: bool,
-    executable: str = "../client.exe"
+    executable: str = None
 ) -> Optional[subprocess.Popen]:
     """
     Starts the client application as a separate process.
@@ -117,14 +125,23 @@ def start_client_process(
         server_host: The hostname or IP address of the game server.
         client_port: The port number the client will use.
         player_name: The desired name for the player in the game.
-        executable: The file path to the client executable. Defaults to
-            '../target/release/client'.
+        grpc_port: The port number for the gRPC server.
+        seed: The seed for the game world.
+        low_gpu: Whether to use low GPU mode.
+        executable: The file path to the client executable. If None, will be determined based on OS.
 
     Returns:
         An optional `subprocess.Popen` object representing the started client
         process. Returns `None` if the executable cannot be found at the specified
         path or if any other error occurs during process creation.
     """
+    if executable is None:
+        # Determine the correct executable based on OS
+        if platform.system() == "Windows":
+            executable = "../client.exe"
+        else:
+            executable = "../client"
+
     command = [
         executable,
         "--auth-port", str(auth_port),
@@ -145,7 +162,7 @@ def start_client_process(
             stderr=subprocess.DEVNULL,
         )
         time.sleep(2)
-        print(f"Started server process with PID: {process.pid}")
+        print(f"Started client process with PID: {process.pid}")
         print(f"Command: {' '.join(shlex.quote(arg) for arg in command)}")
         return process
     except FileNotFoundError:

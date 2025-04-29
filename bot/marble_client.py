@@ -4,7 +4,12 @@ import logging
 import time
 import os
 import uuid
-os.environ["QT_QPA_PLATFORM"] = "xcb"  # Force XCB platform
+import platform
+
+# Only set QT_QPA_PLATFORM on Linux systems
+if platform.system() != "Windows":
+    os.environ["QT_QPA_PLATFORM"] = "xcb"  # Force XCB platform for Linux
+
 import cv2
 import numpy as np
 # Note: You need to generate the Python protobuf files from your .proto file first.
