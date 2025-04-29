@@ -113,6 +113,8 @@ class MarbleClient:
         else:
             forward = True
 
+        extracted_state = self.process_game_state(state.screen)
+
         back = False
         left = False
         right = False
@@ -215,6 +217,45 @@ class MarbleClient:
             float: The total velocity magnitude.
         """
         return (linear_velocity.x ** 2 + linear_velocity.y ** 2 + linear_velocity.z ** 2) ** 0.5
+    
+    def classify_segments(self, segments: list) -> list:
+        """
+        Classifies the segments of the game state.
+        """
+        return segments
+
+    def process_game_state(self, screen_bytes) -> dict:
+        """
+        Processes the game state from the screen image by cropping and segmenting it.
+
+        Args:
+            screen_bytes: The raw bytes of the screen image in RGBA format (1280x720x4).
+
+        Returns:
+            list: A list of 4 numpy arrays representing the vertical segments of the processed image.
+        """
+        # Convert bytes to numpy array and reshape to (720, 1280, 4)
+        nparr = np.frombuffer(screen_bytes, np.uint8)
+        img = nparr.reshape((720, 1280, 4))
+        
+        # Convert RGBA to BGR (OpenCV format)
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+        
+        # Crop the lower part of the image (keep only the top 80% of the image)
+        height, width = img.shape[:2]
+        cropped_height = int(height * 0.8)
+        cropped_img = img[:cropped_height, :]
+        
+        # Split the image into 4 vertical segments
+        segment_width = width // 4
+        segments = []
+        for i in range(4):
+            start_x = i * segment_width
+            end_x = (i + 1) * segment_width
+            segment = cropped_img[:, start_x:end_x]
+            segments.append(segment)
+        
+        return self.classify_segments(segments)
 
     def get_records_as_dataframe(self) -> pd.DataFrame:
         """
