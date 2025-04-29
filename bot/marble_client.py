@@ -255,7 +255,7 @@ class MarbleClient:
             segment = cropped_img[:, start_x:end_x]
             segments.append(segment)
         
-        return self.classify_segments(segments)
+        return {"road_segments_ahead":self.classify_segments(segments)}
 
     def get_records_as_dataframe(self) -> pd.DataFrame:
         """
