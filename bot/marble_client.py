@@ -5,6 +5,8 @@ import time
 import os
 import uuid
 import platform
+import torch
+from cnn_model import MarbleCNN, predict_controls
 
 # Only set QT_QPA_PLATFORM on Linux systems
 if platform.system() != "Windows":
@@ -35,13 +37,16 @@ class MarbleClient:
     in a pandas DataFrame.
     """
 
-    def __init__(self, host: str, port: int, screen_dir: str, name: str):
+    def __init__(self, host: str, port: int, screen_dir: str, name: str, model_path: str = "marble_cnn.pth"):
         """
         Initializes the MarbleClient.
 
         Args:
             host: The hostname or IP address of the gRPC server.
             port: The port number of the gRPC server.
+            screen_dir: Directory to store screen captures.
+            name: Name of the client.
+            model_path: Path to the trained CNN model file (optional).
         """
         self.host = host
         self.port = port
@@ -54,6 +59,18 @@ class MarbleClient:
         self.records = []
         self.screen_dir = screen_dir
         os.makedirs(self.screen_dir, exist_ok=True)  # Ensure the directory exists
+        
+        # Initialize CNN model if model path is provided
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = None
+        if model_path and os.path.exists(model_path):
+            self.model = MarbleCNN().to(self.device)
+            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+            self.model.eval()
+            print(f"Loaded CNN model from {model_path}")
+        else:
+            print(f"No CNN model found at {model_path}")
+        
         print(f"MarbleClient initialized for {self.host}:{self.port}")
 
     def get_state(self) -> service_pb2.StateResponse:
@@ -97,30 +114,39 @@ class MarbleClient:
 
         Returns:
             An InputRequest protobuf message representing the desired action.
-
-        Note:
-            This function currently returns a default input (move forward).
-            You should implement your logic here to decide the input based
-            on the provided state information (e.g., screen data, velocity).
         """
-        # Calculate the total velocity
-        total_velocity = self.calculate_velocity(state.linear_velocity)
-
-        # Placeholder logic: Replace this with your actual decision-making process.
-        # Example: Always move forward unless velocity exceeds 10.
-        if total_velocity > 15:
-            forward = False
-            reset = True
+        # Convert screen bytes to numpy array
+        nparr = np.frombuffer(state.screen, np.uint8)
+        img = nparr.reshape((720, 1280, 4))
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+        
+        # If CNN model is available, use it for prediction
+        if self.model is not None:
+            forward, back, left, right, reset = predict_controls(self.model, img, self.device)
+            
+            # Only print the specific action that was predicted
+            if forward:
+                print("forward")
+            elif back:
+                print("back")
+            elif left:
+                print("left")
+            elif right:
+                print("right")
+            elif reset:
+                print("reset")
         else:
             forward = True
+            back = False
+            left = False
+            right = False
+            reset = False
 
-        extracted_state = self.process_game_state(state.screen)
-
-        back = False
-        left = False
-        right = False
-        reset = False
-
+        total_velocity = self.calculate_velocity(state.linear_velocity)
+        if total_velocity > 20:
+            forward = False
+            reset = True
+            
         time.sleep(0.2)
 
         return service_pb2.InputRequest(
@@ -171,7 +197,6 @@ class MarbleClient:
 
             # Calculate and print total velocity
             total_velocity = self.calculate_velocity(current_state.linear_velocity)
-            print(f"Current velocity: {total_velocity:.2f}")
 
             # 3. Send the input
             response = self.send_input(input_to_send)
