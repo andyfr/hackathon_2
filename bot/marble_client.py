@@ -4,7 +4,9 @@ import logging
 import time
 import os
 import uuid
-#import display_screen
+os.environ["QT_QPA_PLATFORM"] = "xcb"  # Force XCB platform
+import cv2
+import numpy as np
 # Note: You need to generate the Python protobuf files from your .proto file first.
 # Run the following command in your terminal in the directory containing marble.proto:
 # python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. marble.proto
@@ -121,19 +123,40 @@ class MarbleClient:
             reset=reset
         )
 
+    def display_screen(self, screen_bytes):
+        """
+        Displays the screen image using OpenCV.
+        
+        Args:
+            screen_bytes: The raw bytes of the screen image in RGBA format (1280x720x4).
+        """
+        try:
+            # Convert bytes to numpy array and reshape to (720, 1280, 4)
+            nparr = np.frombuffer(screen_bytes, np.uint8)
+            img = nparr.reshape((720, 1280, 4))
+            
+            # Convert RGBA to BGR (OpenCV format)
+            img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+            
+            # Display the image
+            cv2.imshow('Marble View', img)
+            cv2.waitKey(1)  # Update the window
+        except Exception as e:
+            print(f"Error displaying screen: {e}")
+
     def run_interaction_loop(self):
         """
         Runs a loop that repeatedly gets state, determines input, sends input,
         and records the state/input pair.
-
-        Args:
-            iterations: The number of times to run the get_state/send_input cycle.
         """
         while True:
             current_state = self.get_state()
             if current_state is None:
                 print("Failed to get state, stopping loop.")
                 break
+
+            # Display the current screen
+            self.display_screen(current_state.screen)
 
             # 2. Determine the input based on the state
             input_to_send = self.decision(current_state)
@@ -162,8 +185,6 @@ class MarbleClient:
             }
             with open(screen_file, 'wb') as f:
                 f.write(current_state.screen)
-
-            #display_screen.display_screen_from_bytes(current_state.screen)
 
             self.records.append((recorded_state, input_to_send))
             if current_state.finished:
@@ -243,7 +264,8 @@ class MarbleClient:
         return df
 
     def close(self):
-        """Closes the gRPC channel."""
+        """Closes the gRPC channel and OpenCV windows."""
         if self.channel:
             self.channel.close()
             print("gRPC channel closed.")
+        cv2.destroyAllWindows()  # Close all OpenCV windows
