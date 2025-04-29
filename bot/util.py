@@ -51,7 +51,7 @@ def start_server_process(
     seed: int,
     low_gpu: bool,
     headless: bool,
-    server_executable: str = "../server"
+    server_executable: str = "../server.exe"
 ) -> Optional[subprocess.Popen]:
     """
     Starts the server executable as a background process with specified arguments.
@@ -107,7 +107,7 @@ def start_client_process(
     grpc_port: int,
     seed: int,
     low_gpu: bool,
-    executable: str = "../client"
+    executable: str = "../client.exe"
 ) -> Optional[subprocess.Popen]:
     """
     Starts the client application as a separate process.

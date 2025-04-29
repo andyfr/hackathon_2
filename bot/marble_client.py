@@ -4,7 +4,7 @@ import logging
 import time
 import os
 import uuid
-import display_screen
+#import display_screen
 # Note: You need to generate the Python protobuf files from your .proto file first.
 # Run the following command in your terminal in the directory containing marble.proto:
 # python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. marble.proto
@@ -95,9 +95,17 @@ class MarbleClient:
             You should implement your logic here to decide the input based
             on the provided state information (e.g., screen data, velocity).
         """
+        # Calculate the total velocity
+        total_velocity = self.calculate_velocity(state.linear_velocity)
+
         # Placeholder logic: Replace this with your actual decision-making process.
-        # Example: Always move forward.
-        forward = True
+        # Example: Always move forward unless velocity exceeds 10.
+        if total_velocity > 15:
+            forward = False
+            reset = True
+        else:
+            forward = True
+
         back = False
         left = False
         right = False

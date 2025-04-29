@@ -13,3 +13,6 @@ bot/marble_client_records_*.parquet
 ./teams
 server
 client
+server.exe
+client.exe
+

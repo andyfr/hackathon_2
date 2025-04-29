@@ -30,12 +30,12 @@ logger.setLevel(logging.INFO)
 @click.command()
 @click.option('--no-server', default=False, is_flag=True, help='Do not start the server')
 @click.option('--clients', default=1, help='Number of clients to start')
-@click.option('--game-seconds', default=30, help='Time the game runs until a winner is declared')
+@click.option('--game-seconds', default=180, help='Time the game runs until a winner is declared')
 @click.option('--seed', default=1234, help='Seed for the game world generation')
 @click.option('--server-headless', default=False, is_flag=True, help='Run the server in headless mode')
 def run(no_server: bool, clients: int, game_seconds: int, seed: int, server_headless: bool):
     if not no_server:
-        server = util.start_server_process(4000, 5000, clients, game_seconds, seed, False, server_headless)
+        server = util.start_server_process(4000, 5000, clients, game_seconds, seed, True, server_headless)
 
     with ProcessPoolExecutor(max_workers=clients) as executor:
         list(executor.map(run_client, [(i, seed) for i in range(clients)]))
