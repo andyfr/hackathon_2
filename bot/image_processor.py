@@ -240,8 +240,8 @@ def process_png_to_edges(input_file: str, output_dir: str) -> None:
     
     # Scale down the image by 50%
     height, width = img.shape[:2]
-    new_height = height // 2
-    new_width = width // 2
+    new_height = height // 4
+    new_width = width // 4
     img = cv2.resize(img, (new_width, new_height))
     
     # Convert to grayscale
