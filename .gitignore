@@ -9,5 +9,7 @@ bot/proto/__pycache__
 bot/raw_screens
 bot/raw_screens_*
 bot/output_images_*
-bot/marble_client_records_*.csv
+bot/marble_client_records_*.parquet
 ./teams
+server
+client
