@@ -2,6 +2,11 @@ import cv2
 import numpy as np
 import argparse
 import os
+import platform
+
+# Only set QT_QPA_PLATFORM on Linux systems
+if platform.system() != "Windows":
+    os.environ["QT_QPA_PLATFORM"] = "xcb"  # Force XCB platform for Linux
 
 def process_game_state(screen_bytes) -> dict:
     """
@@ -49,23 +54,30 @@ def classify_segments(segments: list) -> list:
     # TODO: Implement actual classification logic
     return segments
 
-def save_segments(segments: list, output_dir: str):
+def display_segments(segments: list):
     """
-    Saves the segments as separate image files for debugging.
+    Displays the segments vertically stacked with borders between them.
     
     Args:
-        segments: List of image segments to save
-        output_dir: Directory to save the segments in
+        segments: List of image segments to display
     """
-    os.makedirs(output_dir, exist_ok=True)
-    for i, segment in enumerate(segments):
-        output_path = os.path.join(output_dir, f"segment_{i}.png")
-        cv2.imwrite(output_path, segment)
+    # Create a border image (white line)
+    border_height = 2
+    border = np.ones((border_height, segments[0].shape[1], 3), dtype=np.uint8) * 255
+    
+    # Stack segments vertically with borders
+    display_img = segments[0]
+    for segment in segments[1:]:
+        display_img = np.vstack((display_img, border, segment))
+    
+    # Show the image
+    cv2.imshow('Segments', display_img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 def main():
     parser = argparse.ArgumentParser(description='Process game state images')
     parser.add_argument('input_file', help='Path to the input image file')
-    parser.add_argument('--output-dir', default='debug_segments', help='Directory to save debug segments')
     args = parser.parse_args()
 
     # Read the input image
@@ -75,10 +87,8 @@ def main():
     # Process the image
     result = process_game_state(screen_bytes)
     
-    # Save segments for debugging
-    save_segments(result["road_segments_ahead"], args.output_dir)
-    
-    print(f"Processed image and saved segments to {args.output_dir}")
+    # Display segments
+    display_segments(result["road_segments_ahead"])
 
 if __name__ == "__main__":
     main() 
