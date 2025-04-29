@@ -12,7 +12,7 @@ if platform.system() != "Windows":
 
 import cv2
 import numpy as np
-from .image_processor import process_game_state
+from image_processor import process_game_state
 # Note: You need to generate the Python protobuf files from your .proto file first.
 # Run the following command in your terminal in the directory containing marble.proto:
 # python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. marble.proto
@@ -181,7 +181,7 @@ class MarbleClient:
 
             # 4. Record the state and the input that was sent
 
-            screen_file = os.path.join(self.screen_dir, f"screen_{uuid.uuid4()}")
+            screen_file = os.path.join(self.screen_dir, f"screen_{len(self.records)}")
             recorded_state = {
                 'screen': screen_file,
                 'linear_velocity': current_state.linear_velocity,
