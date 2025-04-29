@@ -33,20 +33,21 @@ logger.setLevel(logging.INFO)
 @click.option('--game-seconds', default=180, help='Time the game runs until a winner is declared')
 @click.option('--seed', default=1234, help='Seed for the game world generation')
 @click.option('--server-headless', default=False, is_flag=True, help='Run the server in headless mode')
-def run(no_server: bool, clients: int, game_seconds: int, seed: int, server_headless: bool):
+@click.option('--low-gpu', default=False, is_flag=True, help='Run in low GPU mode')
+def run(no_server: bool, clients: int, game_seconds: int, seed: int, server_headless: bool, low_gpu: bool):
     if not no_server:
-        server = util.start_server_process(4000, 5000, clients, game_seconds, seed, True, server_headless)
+        server = util.start_server_process(4000, 5000, clients, game_seconds, seed, low_gpu, server_headless)
 
     with ProcessPoolExecutor(max_workers=clients) as executor:
-        list(executor.map(run_client, [(i, seed) for i in range(clients)]))
+        list(executor.map(run_client, [(i, seed, low_gpu) for i in range(clients)]))
     if server:
         server.kill()
 
 
-def run_client(args: (int, int)) -> Optional[subprocess.Popen]:
-    client_id, seed = args
+def run_client(args: (int, int, bool)) -> Optional[subprocess.Popen]:
+    client_id, seed, low_gpu = args
     name = 'A' + str(client_id)
-    client = util.start_client_process(4000, '127.0.0.1', 5001 + client_id, name, 50051 + client_id, seed, False)
+    client = util.start_client_process(4000, '127.0.0.1', 5001 + client_id, name, 50051 + client_id, seed, low_gpu)
 
     bot = marble_client.MarbleClient('localhost', str(50051 + client_id), 'raw_screens_' + str(client_id), name)
     try:

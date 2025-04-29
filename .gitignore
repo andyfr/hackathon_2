@@ -11,6 +11,7 @@ bot/raw_screens_*
 bot/output_images_*
 bot/marble_client_records_*.parquet
 bot/debug_segments
+bot/simplified_images
 ./teams
 server
 client

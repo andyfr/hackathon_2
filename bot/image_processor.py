@@ -48,43 +48,43 @@ def process_game_state(screen_bytes) -> dict:
     }
 
 def detect_road_curvature(img) -> float:
-        """
-        Detects road curvature using a geometric approach.
-        Args:
-            img: The input image in BGR format.
-        Returns:
-            The radius of curvature.
-        """
-        # Step 1: Convert to grayscale and create a binary mask for black stripes
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        _, binary_mask = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY_INV)
-        
-        # Step 2: Apply a bird's-eye warp (perspective transform)
-        height, width = binary_mask.shape
-        src = np.float32([[0, height], [width, height], [0, 0], [width, 0]])
-        dst = np.float32([[width*0.2, height], [width*0.8, height], [0, 0], [width, 0]])
-        M = cv2.getPerspectiveTransform(src, dst)
-        warped = cv2.warpPerspective(binary_mask, M, (width, height))
-        
-        # Display the warped image
-        cv2.imshow('Warped View', warped)
-        cv2.waitKey(1)  # Wait for 1ms to update the window
-        
-        # Step 3: Sliding window to collect stripe center pixels
-        histogram = np.sum(warped[warped.shape[0]//2:,:], axis=0)
-        midpoint = int(histogram.shape[0]//2)
-        base = np.argmax(histogram[:midpoint])
-        
-        # Step 4: Fit a second-order polynomial
-        y_indices = np.linspace(0, height-1, num=height)
-        x_indices = base + (y_indices - height/2) * 0.5  # Example calculation
-        fit = np.polyfit(y_indices, x_indices, 2)
-        
-        # Step 5: Calculate the radius of curvature
-        A, B, _ = fit
-        y_eval = np.max(y_indices)
-        curvature_radius = ((1 + (2*A*y_eval + B)**2)**1.5) / np.abs(2*A)
-        return curvature_radius
+    """
+    Detects road curvature using a geometric approach.
+    Args:
+        img: The input image in BGR format.
+    Returns:
+        The radius of curvature.
+    """
+    # Step 1: Convert to grayscale and create a binary mask for black stripes
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _, binary_mask = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY_INV)
+    
+    # Step 2: Apply a bird's-eye warp (perspective transform)
+    height, width = binary_mask.shape
+    src = np.float32([[0, height], [width, height], [0, 0], [width, 0]])
+    dst = np.float32([[width*0.2, height], [width*0.8, height], [0, 0], [width, 0]])
+    M = cv2.getPerspectiveTransform(src, dst)
+    warped = cv2.warpPerspective(binary_mask, M, (width, height))
+    
+    # Display the warped image
+    cv2.imshow('Warped View', warped)
+    cv2.waitKey(1)  # Wait for 1ms to update the window
+    
+    # Step 3: Sliding window to collect stripe center pixels
+    histogram = np.sum(warped[warped.shape[0]//2:,:], axis=0)
+    midpoint = int(histogram.shape[0]//2)
+    base = np.argmax(histogram[:midpoint])
+    
+    # Step 4: Fit a second-order polynomial
+    y_indices = np.linspace(0, height-1, num=height)
+    x_indices = base + (y_indices - height/2) * 0.5  # Example calculation
+    fit = np.polyfit(y_indices, x_indices, 2)
+    
+    # Step 5: Calculate the radius of curvature
+    A, B, _ = fit
+    y_eval = np.max(y_indices)
+    curvature_radius = ((1 + (2*A*y_eval + B)**2)**1.5) / np.abs(2*A)
+    return curvature_radius
 
 def classify_segments(segments: list) -> list:
     """
@@ -224,20 +224,82 @@ def display_segments(segments: list, curvature_values: list):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
+def process_png_to_edges(input_file: str, output_dir: str) -> None:
+    """
+    Processes a PNG image and saves an edge-detected version.
+    
+    Args:
+        input_file: Path to the input PNG file
+        output_dir: Directory to save the edge-detected image
+    """
+    # Read the input image
+    img = cv2.imread(input_file)
+    if img is None:
+        print(f"Error: Could not read image {input_file}")
+        return
+    
+    # Scale down the image by 50%
+    height, width = img.shape[:2]
+    new_height = height // 2
+    new_width = width // 2
+    img = cv2.resize(img, (new_width, new_height))
+    
+    # Convert to grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # Apply Gaussian blur to reduce noise
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    
+    # Apply Canny edge detection
+    edges = cv2.Canny(blurred, 50, 150)
+    
+    # Convert back to BGR for saving
+    edge_img = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+    
+    # Generate output filename
+    base_name = os.path.basename(input_file)
+    name_without_ext = os.path.splitext(base_name)[0]
+    output_file = os.path.join(output_dir, f"{name_without_ext}_edges.png")
+    
+    # Save the edge-detected image
+    cv2.imwrite(output_file, edge_img)
+    print(f"Saved edge-detected image to {output_file}")
+
+def process_folder(input_dir: str, output_dir: str) -> None:
+    """
+    Processes all PNG images in the input directory and saves edge-detected versions.
+    
+    Args:
+        input_dir: Directory containing input PNG files
+        output_dir: Directory to save edge-detected images
+    """
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Get all PNG files in the input directory
+    png_files = [f for f in os.listdir(input_dir) if f.lower().endswith('.png')]
+    
+    if not png_files:
+        print(f"No PNG files found in {input_dir}")
+        return
+    
+    print(f"Found {len(png_files)} PNG files to process")
+    
+    # Process each PNG file
+    for png_file in png_files:
+        input_path = os.path.join(input_dir, png_file)
+        process_png_to_edges(input_path, output_dir)
+    
+    print(f"Finished processing {len(png_files)} images")
+
 def main():
     parser = argparse.ArgumentParser(description='Process game state images')
-    parser.add_argument('input_file', help='Path to the input image file')
+    parser.add_argument('input_dir', help='Directory containing input PNG files')
+    parser.add_argument('--output-dir', default='edge_images', help='Directory to save edge-detected images')
     args = parser.parse_args()
 
-    # Read the input image
-    with open(args.input_file, 'rb') as f:
-        screen_bytes = f.read()
-
-    # Process the image
-    result = process_game_state(screen_bytes)
-    
-    # Display segments with their curvature values
-    display_segments(result["road_segments_ahead"], result["curvature_values"])
+    # Process all PNG files in the input directory
+    process_folder(args.input_dir, args.output_dir)
 
 if __name__ == "__main__":
     main() 
