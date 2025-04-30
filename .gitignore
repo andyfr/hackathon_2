@@ -13,10 +13,12 @@ bot/marble_client_records_*.parquet
 bot/debug_segments
 bot/simplified_images
 bot/annotations.csv
+bot/marble_cnn.pth
 ./teams
 server
 client
 server.exe
 client.exe
+
 
 

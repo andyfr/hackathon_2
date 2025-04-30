@@ -3,7 +3,7 @@ import numpy as np
 import argparse
 import os
 import platform
-
+import torch
 # Only set QT_QPA_PLATFORM on Linux systems
 if platform.system() != "Windows":
     os.environ["QT_QPA_PLATFORM"] = "xcb"  # Force XCB platform for Linux
@@ -238,10 +238,12 @@ def process_png_to_edges(input_file: str, output_dir: str) -> None:
         print(f"Error: Could not read image {input_file}")
         return
     
-    # Scale down the image by 50%
+
     height, width = img.shape[:2]
-    new_height = height // 4
-    new_width = width // 4
+    
+    scale_factor = 10
+    new_height = height // scale_factor
+    new_width = width // scale_factor
     img = cv2.resize(img, (new_width, new_height))
     
     # Convert to grayscale
@@ -264,6 +266,42 @@ def process_png_to_edges(input_file: str, output_dir: str) -> None:
     # Save the edge-detected image
     cv2.imwrite(output_file, edge_img)
     print(f"Saved edge-detected image to {output_file}")
+
+
+def image_to_edges(img):
+    """
+    Converts an image to an edge-detected image.
+    """
+
+    nparr = np.frombuffer(img, np.uint8)
+    if len(nparr) != 1280 * 720 * 4:  # Check if we have the correct number of bytes
+        print(f"Warning: Expected {1280 * 720 * 4} bytes, got {len(nparr)}")
+        raise ValueError("Invalid image size")
+    img = nparr.reshape((720, 1280, 4))
+    
+    # Convert RGBA to BGR (OpenCV format)
+    img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+    
+    scale_factor = 10
+    height, width = img.shape[:2]
+    new_height = height // scale_factor
+    new_width = width // scale_factor
+    img = cv2.resize(img, (new_width, new_height))
+    
+    # Convert to grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # Apply Gaussian blur to reduce noise
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    
+    # Apply Canny edge detection
+    edges = cv2.Canny(blurred, 50, 150)
+    img = edges
+    img = torch.FloatTensor(img) / 255.0  # Normalize to [0, 1]
+    img = img.unsqueeze(0)  # Add batch dimension
+    img = img.permute(0, 2, 1)  # Rearrange dimensions to [batch, channels, height, width]
+    return img
+
 
 def process_folder(input_dir: str, output_dir: str) -> None:
     """

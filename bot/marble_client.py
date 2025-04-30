@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 from pynput import keyboard
 from cnn_model import MarbleCNN, predict_controls
+from image_processor import image_to_edges
 
 # Only set QT_QPA_PLATFORM on Linux systems
 if platform.system() != "Windows":
@@ -160,13 +161,17 @@ class MarbleClient:
                 print("reset")
         else:
             # Convert screen bytes to numpy array
+            total_velocity = self.calculate_velocity(state.linear_velocity)
             nparr = np.frombuffer(state.screen, np.uint8)
             img = nparr.reshape((720, 1280, 4))
+            if len(nparr) != 1280 * 720 * 4:  # Check if we have the correct number of bytes
+                print(f"Warning: Expected {1280 * 720 * 4} bytes, got {len(nparr)}")
+                return
             img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
             
             # If CNN model is available, use it for prediction
             if self.model is not None:
-                forward, back, left, right, reset = predict_controls(self.model, img, self.device)
+                forward, back, left, right, reset = predict_controls(self.model, state.screen, self.device, total_velocity)
                 
                 # Only print the specific action that was predicted
                 if forward:
@@ -186,12 +191,10 @@ class MarbleClient:
                 right = False
                 reset = False
 
-            total_velocity = self.calculate_velocity(state.linear_velocity)
-            if total_velocity > 20:
+            
+            if total_velocity > 16:
                 forward = False
                 reset = True
-                
-            time.sleep(0.1)
 
         return service_pb2.InputRequest(
             forward=forward,
@@ -211,6 +214,10 @@ class MarbleClient:
         try:
             # Convert bytes to numpy array and reshape to (720, 1280, 4)
             nparr = np.frombuffer(screen_bytes, np.uint8)
+            if len(nparr) != 1280 * 720 * 4:  # Check if we have the correct number of bytes
+                print(f"Warning: Expected {1280 * 720 * 4} bytes, got {len(nparr)}")
+                return
+                
             img = nparr.reshape((720, 1280, 4))
             
             # Convert RGBA to BGR (OpenCV format)
@@ -221,6 +228,8 @@ class MarbleClient:
             cv2.waitKey(1)  # Update the window
         except Exception as e:
             print(f"Error displaying screen: {e}")
+            print(f"Screen bytes length: {len(screen_bytes) if screen_bytes else 'None'}")
+            print(f"Numpy array shape: {nparr.shape if 'nparr' in locals() else 'Not created'}")
 
     def run_interaction_loop(self):
         """
@@ -264,6 +273,7 @@ class MarbleClient:
                 f.write(current_state.screen)
 
             self.records.append((recorded_state, input_to_send))
+            time.sleep(0.2)
             if current_state.finished:
                 for index, result in enumerate(current_state.results):
                     if result.name == self.name:
@@ -347,7 +357,7 @@ class MarbleClient:
                 'relative_angular_velocity_z': state['relative_angular_velocity'].z,
                 'finished': state['finished'],
                 'results': results_list,  # Store list of result dicts
-
+                'total_velocity': state['total_velocity'],
                 # Input fields
                 'input_forward': input_req.forward,
                 'input_back': input_req.back,

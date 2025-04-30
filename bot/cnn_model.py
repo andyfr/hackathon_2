@@ -1,3 +1,4 @@
+from image_processor import image_to_edges
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -7,36 +8,37 @@ from torch.utils.data import Dataset, DataLoader
 import os
 import pandas as pd
 from typing import Tuple, List
+import platform
+if platform.system() != "Windows":
+    os.environ["QT_QPA_PLATFORM"] = "xcb"  # Force XCB platform for Linux
 
 class MarbleDataset(Dataset):
-    def __init__(self, csv_path: str, image_dir: str, transform=None):
+    def __init__(self, data_path: str, transform=None):
         """
         Args:
-            csv_path: Full path to the CSV file containing the records
-            image_dir: Directory containing the screen images
+            data_path: Full path to the parquet file containing the records
             transform: Optional transform to be applied on the images
         """
-        self.image_dir = image_dir
         self.transform = transform
         self.records = []
         
-        # Load the CSV file containing the records
-        print(f"Loading CSV file from {csv_path}")
-        df = pd.read_csv(csv_path)
+        # Load the parquet file containing the records
+        print(f"Loading parquet file from {data_path}")
+        df = pd.read_parquet(data_path)
         print(f"Loaded {len(df)} records")
         
         # Process each record
         for _, row in df.iterrows():
-            image_path = os.path.join(self.image_dir, row['filename'])
+            image_path = row['screen']
             
             if os.path.exists(image_path):
                 self.records.append({
                     'image_path': image_path,
-                    'forward': row['forward'],
-                    'back': False,
-                    'left': row['left'],
-                    'right': row['right'],
-                    'reset': row['reset']
+                    'forward': row['input_forward'],
+                    'back': row['input_back'],
+                    'left': row['input_left'],
+                    'right': row['input_right'],
+                    'reset': row['input_reset']
                 })
             else:
                 print(f"Image not found: {image_path}")
@@ -48,15 +50,11 @@ class MarbleDataset(Dataset):
     def __getitem__(self, idx):
         record = self.records[idx]
         
-        # Load and preprocess the image
-        img = cv2.imread(record['image_path'])
-        if img is None:
-            raise ValueError(f"Failed to load image: {record['image_path']}")
-            
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = cv2.resize(img, (320, 180))  # Resize to smaller dimensions
-        img = img.transpose(2, 0, 1)  # Convert to CxHxW format
-        img = torch.FloatTensor(img) / 255.0  # Normalize to [0, 1]
+        # Read the raw screen bytes
+        with open(record['image_path'], 'rb') as f:
+            screen_bytes = f.read()
+        
+        img = image_to_edges(screen_bytes)
         
         # Create the target tensor
         target = torch.FloatTensor([
@@ -74,7 +72,7 @@ class MarbleCNN(nn.Module):
         super(MarbleCNN, self).__init__()
         
         # Convolutional layers
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1)
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
         
@@ -82,7 +80,7 @@ class MarbleCNN(nn.Module):
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
         
         # Fully connected layers
-        self.fc1 = nn.Linear(128 * 22 * 40, 512)  # Adjusted for input size 320x180
+        self.fc1 = nn.Linear(128 * 16 * 9, 512)  # Adjusted for input size 320x180
         self.fc2 = nn.Linear(512, 5)  # 5 outputs for the control commands
         
         # Activation functions
@@ -91,16 +89,26 @@ class MarbleCNN(nn.Module):
 
     def forward(self, x):
         # Convolutional layers
-        x = self.pool(self.relu(self.conv1(x)))
-        x = self.pool(self.relu(self.conv2(x)))
-        x = self.pool(self.relu(self.conv3(x)))
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.pool(x)
+        
+        x = self.conv2(x)
+        x = self.relu(x)
+        x = self.pool(x)
+        
+        x = self.conv3(x)
+        x = self.relu(x)
+        x = self.pool(x)
         
         # Flatten
-        x = x.view(-1, 128 * 22 * 40)
+        x = x.view(-1, 128 * 16 * 9)
         
         # Fully connected layers
-        x = self.relu(self.fc1(x))
-        x = self.sigmoid(self.fc2(x))
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        x = self.sigmoid(x)
         
         return x
 
@@ -109,7 +117,8 @@ def train_model(model: nn.Module,
                 criterion: nn.Module, 
                 optimizer: optim.Optimizer, 
                 num_epochs: int,
-                device: torch.device) -> List[float]:
+                device: torch.device,
+                test_loader: DataLoader = None) -> Tuple[List[float], List[float], List[float]]:
     """
     Train the CNN model.
     
@@ -120,14 +129,18 @@ def train_model(model: nn.Module,
         optimizer: Optimizer
         num_epochs: Number of epochs to train
         device: Device to train on (CPU/GPU)
+        test_loader: Optional DataLoader for test data
     
     Returns:
-        List of training losses
+        Tuple of (training losses, test losses, test accuracies)
     """
     model.train()
-    losses = []
+    train_losses = []
+    test_losses = []
+    test_accuracies = []
     
     for epoch in range(num_epochs):
+        print(f"Epoch {epoch + 1} of {num_epochs}")
         running_loss = 0.0
         total_batches = 0
         for i, (images, targets) in enumerate(train_loader):
@@ -150,14 +163,41 @@ def train_model(model: nn.Module,
             
             if i % 10 == 9:
                 print(f'Epoch {epoch + 1}, Batch {i + 1}, Loss: {running_loss / 10:.4f}')
-                losses.append(running_loss / 10)
+                train_losses.append(running_loss / 10)
                 running_loss = 0.0
         
         # Print average loss for the epoch
         epoch_avg_loss = running_loss / total_batches
-        print(f'Epoch {epoch + 1} completed. Average loss: {epoch_avg_loss:.4f}')
+        print(f'Epoch {epoch + 1} completed. Average training loss: {epoch_avg_loss:.4f}')
+        
+        # Evaluation phase if test_loader is provided
+        if test_loader is not None:
+            model.eval()
+            test_loss = 0.0
+            correct = 0
+            total = 0
+            
+            with torch.no_grad():
+                for images, targets in test_loader:
+                    images = images.to(device)
+                    targets = targets.to(device)
+                    outputs = model(images)
+                    loss = criterion(outputs, targets)
+                    test_loss += loss.item()
+                    
+                    # Convert outputs to binary predictions
+                    predictions = (outputs > 0.5).float()
+                    correct += (predictions == targets).sum().item()
+                    total += targets.numel()
+            
+            avg_test_loss = test_loss / len(test_loader)
+            accuracy = correct / total
+            test_losses.append(avg_test_loss)
+            test_accuracies.append(accuracy)
+            
+            print(f'Test Loss: {avg_test_loss:.4f}, Test Accuracy: {accuracy:.4f}')
     
-    return losses
+    return train_losses, test_losses, test_accuracies
 
 def save_model(model: nn.Module, path: str):
     """Save the trained model."""
@@ -168,7 +208,7 @@ def load_model(model: nn.Module, path: str):
     model.load_state_dict(torch.load(path))
     return model
 
-def predict_controls(model: nn.Module, image: np.ndarray, device: torch.device) -> Tuple[bool, bool, bool, bool, bool]:
+def predict_controls(model: nn.Module, image: np.ndarray, device: torch.device, velocity: int) -> Tuple[bool, bool, bool, bool, bool]:
     """
     Predict control commands for a given image.
     
@@ -183,10 +223,7 @@ def predict_controls(model: nn.Module, image: np.ndarray, device: torch.device) 
     model.eval()
     with torch.no_grad():
         # Preprocess image
-        img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        img = cv2.resize(img, (320, 180))
-        img = img.transpose(2, 0, 1)
-        img = torch.FloatTensor(img).unsqueeze(0) / 255.0
+        img = image_to_edges(image)
         img = img.to(device)
         
         # Get predictions

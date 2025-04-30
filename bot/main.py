@@ -3,6 +3,7 @@ import util
 import marble_client
 import click
 import subprocess
+import random
 from typing import Optional
 from concurrent.futures import ProcessPoolExecutor
 
@@ -32,12 +33,17 @@ logger.setLevel(logging.INFO)
 @click.option('--clients', default=1, help='Number of clients to start')
 @click.option('--game-seconds', default=180, help='Time the game runs until a winner is declared')
 @click.option('--seed', default=1234, help='Seed for the game world generation')
+@click.option('--random-seed', default=False, is_flag=True, help='Generate a random seed for the game')
 @click.option('--server-headless', default=False, is_flag=True, help='Run the server in headless mode')
 @click.option('--low-gpu', default=False, is_flag=True, help='Run in low GPU mode')
 @click.option('--server-ip', default='127.0.0.1', help='IP address of the server')
 @click.option('--model-path', default='marble_cnn.pth', help='Path to the trained CNN model file')
 @click.option('--manual-mode', default=False, is_flag=True, help='Enable manual keyboard control mode')
-def run(no_server: bool, clients: int, game_seconds: int, seed: int, server_headless: bool, low_gpu: bool, server_ip: str, model_path: str, manual_mode: bool):
+def run(no_server: bool, clients: int, game_seconds: int, seed: int, random_seed: bool, server_headless: bool, low_gpu: bool, server_ip: str, model_path: str, manual_mode: bool):
+    if random_seed:
+        seed = random.randint(0, 2**32 - 1)
+        logger.info(f'Using random seed: {seed}')
+
     if not no_server:
         server = util.start_server_process(4000, 5000, clients, game_seconds, seed, low_gpu, server_headless)
 
